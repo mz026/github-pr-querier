@@ -1,0 +1,86 @@
+#!/usr/bin/env ruby
+
+require 'httparty'
+require 'yaml'
+require 'colored'
+require_relative './query_filter'
+# ref: https://help.github.com/articles/searching-issues/
+
+ACCEPT_HEADER = 'application/vnd.github.v3+json'
+USER_AGENT = 'Ruby'
+
+credentials = YAML.load_file("#{__dir__}/.credentials.yml")
+username = credentials['username']
+token = credentials['token']
+
+class Querier
+  attr_reader :username, :token, :query_type
+
+  def initialize username, token, query_type
+    @username = username
+    @token = token
+    @query_type = query_type
+  end
+
+  def query
+    queries = QueryFilter.get_queries(@query_type)
+    queries.inject([]) do |total, q|
+      body = request_github(q)
+      total.concat extract_res(body)
+    end
+  end
+
+  private
+
+  def request_github query
+    res = HTTParty.get(
+      "https://api.github.com/search/issues",
+      query: {
+        q: query
+      },
+      headers: {
+        'Accept' => ACCEPT_HEADER,
+        'User-Agent' => USER_AGENT
+      },
+      basic_auth: {
+        username: username,
+        password: token
+      })
+    raise "fetching faild. [#{res.code}]: #{res.body}" unless res.success?
+    res.body
+  end
+
+  def extract_res body
+    res_hash = JSON.parse(body)
+    res_hash['items'].map do |i|
+      {
+        title: i['title'],
+        url: i['pull_request']['html_url']
+      }
+    end
+  end
+end
+
+[
+  {
+    title: "To be Merged",
+    query_type: :to_be_merged
+  },
+  {
+    title: "My Reviewed PRs",
+    query_type: :my_reviewed_prs
+  },
+  {
+    title: "Pending Reviews",
+    query_type: :pending_reviews
+  }
+].each do |d|
+  repos = Querier.new(username, token, d[:query_type]).query
+  next if repos.empty?
+
+  puts "=== #{d[:title].bold} ==="
+  repos.each do |repo|
+    puts "#{'*'.red} title: #{repo[:title]}"
+    puts "  url: #{repo[:url]}"
+  end
+end
