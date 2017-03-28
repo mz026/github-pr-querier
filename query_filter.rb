@@ -1,5 +1,5 @@
 module QueryFilter
-  config = YAML.load_file("#{__dir__}/.credentials")
+  config = YAML.load_file("#{__dir__}/.credentials.yml")
   REPO_OWNER = config['repo_owner']
   USERNAME = config['username']
 
